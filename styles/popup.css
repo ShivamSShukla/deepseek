@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>HyperScraper Pro</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <header class="header">
+      <h1>🚀 HyperScraper Pro</h1>
+      <div class="status" id="status">Ready</div>
+    </header>
+    
+    <div class="mode-selector">
+      <button class="mode-btn active" data-mode="quick">Quick Scrape</button>
+      <button class="mode-btn" data-mode="advanced">Advanced</button>
+      <button class="mode-btn" data-mode="batch">Batch</button>
+    </div>
+    
+    <div class="mode-content" id="quick-mode">
+      <div class="preset-buttons">
+        <button class="preset" data-preset="tables">📊 Extract Tables</button>
+        <button class="preset" data-preset="products">🛒 Extract Products</button>
+        <button class="preset" data-preset="lists">📝 Extract Lists</button>
+        <button class="preset" data-preset="contacts">👥 Extract Contacts</button>
+      </div>
+      
+      <div class="auto-options">
+        <label>
+          <input type="checkbox" id="auto-detect" checked>
+          Auto-detect best data
+        </label>
+        <label>
+          <input type="checkbox" id="include-images">
+          Include images
+        </label>
+      </div>
+      
+      <button id="scrape-now" class="primary-btn">
+        ⚡ Scrape This Page
+      </button>
+      
+      <div class="performance">
+        <div class="speedometer">
+          <span>Speed:</span>
+          <span class="speed-value" id="speed-value">~50ms</span>
+        </div>
+      </div>
+    </div>
+    
+    <div class="mode-content hidden" id="advanced-mode">
+      <div class="selector-input">
+        <label>CSS Selectors (one per line):</label>
+        <textarea id="css-selectors" placeholder="table.products
+.product-item
+.item-list > li"></textarea>
+      </div>
+      
+      <div class="advanced-options">
+        <div class="option">
+          <label>Depth:</label>
+          <select id="depth">
+            <option value="1">Current page only</option>
+            <option value="2">2 pages deep</option>
+            <option value="3">3 pages deep</option>
+            <option value="all">All links</option>
+          </select>
+        </div>
+        
+        <div class="option">
+          <label>Delay:</label>
+          <input type="range" id="delay" min="0" max="5000" value="1000">
+          <span id="delay-value">1s</span>
+        </div>
+      </div>
+    </div>
+    
+    <div class="mode-content hidden" id="batch-mode">
+      <div class="urls-input">
+        <label>URLs to scrape (one per line):</label>
+        <textarea id="batch-urls" placeholder="https://example.com/products
+https://example.com/catalog"></textarea>
+      </div>
+      
+      <div class="batch-controls">
+        <button id="start-batch" class="primary-btn">
+          🚀 Start Batch Job
+        </button>
+        <div class="batch-progress hidden">
+          <div class="progress-bar">
+            <div class="progress-fill" id="progress-fill"></div>
+          </div>
+          <span id="progress-text">0/0</span>
+        </div>
+      </div>
+    </div>
+    
+    <div class="results-preview hidden" id="results-preview">
+      <h3>Preview (10 rows)</h3>
+      <div class="table-container">
+        <table id="preview-table">
+          <!-- Filled dynamically -->
+        </table>
+      </div>
+      
+      <div class="export-options">
+        <span>Export as:</span>
+        <button class="export-btn" data-format="csv">CSV</button>
+        <button class="export-btn" data-format="excel">Excel</button>
+        <button class="export-btn" data-format="json">JSON</button>
+        <button class="export-btn" data-format="clipboard">📋 Copy</button>
+      </div>
+      
+      <div class="stats">
+        <span id="row-count">0 rows</span>
+        <span id="extraction-time">0ms</span>
+      </div>
+    </div>
+    
+    <div class="footer">
+      <button id="open-sidebar">📊 Open Data Viewer</button>
+      <button id="open-options">⚙️ Settings</button>
+    </div>
+  </div>
+  
+  <script src="popup.js"></script>
+</body>
+</html>
