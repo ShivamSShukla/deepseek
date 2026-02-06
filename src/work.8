@@ -1,0 +1,62 @@
+jsonCopyDownload{
+  "manifest_version": 3,
+  "name": "HyperScraper Pro",
+  "version": "1.0.0",
+  "description": "Ultimate web scraping with smart selector detection",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage",
+    "downloads",
+    "clipboardWrite",
+    "notifications",
+    "sidePanel"
+  ],
+  "host_permissions": ["<all_urls>"],
+  "background": {
+    "service_worker": "background/service-worker.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": [
+        "content/content.js",
+        "content/dom-scanner.js",
+        "content/selectors/table-detector.js",
+        "content/selectors/list-detector.js",
+        "content/selectors/product-detector.js"
+      ],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ],
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_title": "HyperScraper Pro"
+  },
+  "side_panel": {
+    "default_path": "sidebar/sidebar.html"
+  },
+  "options_page": "options/options.html",
+  "web_accessible_resources": [
+    {
+      "resources": ["assets/*"],
+      "matches": ["<all_urls>"]
+    }
+  ],
+  "icons": {
+    "16": "assets/icons/icon16.png",
+    "48": "assets/icons/icon48.png",
+    "128": "assets/icons/icon128.png"
+  },
+  "commands": {
+    "toggle-picker": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+E",
+        "mac": "Command+Shift+E"
+      },
+      "description": "Toggle element picker"
+    }
+  }
+}
