@@ -1,0 +1,109 @@
+.selector-tester {
+  background: #f8f9fa;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 12px;
+  margin: 12px 0;
+}
+
+.selector-tester h4 {
+  margin-bottom: 12px;
+  color: #667eea;
+}
+
+.tester-controls {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+#selector-input {
+  flex: 1;
+  padding: 8px 12px;
+  border: 2px solid #ddd;
+  border-radius: 6px;
+  font-family: monospace;
+  font-size: 13px;
+}
+
+#selector-input:focus {
+  border-color: #667eea;
+  outline: none;
+}
+
+.tester-controls button {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 6px;
+  background: #667eea;
+  color: white;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.tester-controls button:hover {
+  background: #5a67d8;
+}
+
+#pick-element {
+  background: #48bb78;
+}
+
+.result-stats {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: #666;
+  margin-bottom: 8px;
+}
+
+.matches-preview {
+  max-height: 200px;
+  overflow-y: auto;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  padding: 8px;
+  background: white;
+  margin-bottom: 12px;
+}
+
+.match-item {
+  padding: 6px 8px;
+  border-bottom: 1px solid #f0f0f0;
+  font-family: monospace;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.match-item:hover {
+  background: #f0f7ff;
+}
+
+.match-item.selected {
+  background: #667eea;
+  color: white;
+}
+
+.selector-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.selector-actions button {
+  flex: 1;
+  padding: 8px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+#use-selector {
+  background: #667eea;
+  color: white;
+}
+
+#save-selector {
+  background: #f6ad55;
+  color: white;
+}
