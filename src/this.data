@@ -1,0 +1,1065 @@
+class DataViewer {
+  constructor() {
+    this.data = [];
+    this.filteredData = [];
+    this.currentPage = 1;
+    this.pageSize = 50;
+    this.columns = [];
+    this.savedSelectors = [];
+    this.selectedSelector = null;
+    this.init();
+  }
+
+  async init() {
+    console.log('HyperScraper Pro Sidebar initialized');
+    
+    // Load data and saved selectors
+    await Promise.all([
+      this.loadData(),
+      this.loadSavedSelectors()
+    ]);
+    
+    // Set up event listeners
+    this.setupEventListeners();
+    
+    // Initial render
+    this.render();
+  }
+
+  async loadData() {
+    try {
+      const result = await chrome.storage.local.get(['scrapedData', 'dataSource', 'lastScrapeTime']);
+      
+      if (result.scrapedData && Array.isArray(result.scrapedData)) {
+        this.data = result.scrapedData;
+        this.filteredData = [...this.data];
+        
+        if (this.data.length > 0) {
+          this.columns = Object.keys(this.data[0]);
+        }
+        
+        console.log(`Loaded ${this.data.length} rows of data`);
+      }
+      
+      if (result.dataSource) {
+        document.getElementById('data-source').textContent = result.dataSource;
+        document.getElementById('data-source').title = result.dataSource;
+      }
+      
+      if (result.lastScrapeTime) {
+        this.updateScrapeTime(result.lastScrapeTime);
+      }
+    } catch (error) {
+      console.error('Failed to load data:', error);
+    }
+  }
+
+  async loadSavedSelectors() {
+    try {
+      const result = await chrome.storage.local.get(['savedSelectors']);
+      this.savedSelectors = result.savedSelectors || [];
+      this.renderSavedSelectors();
+    } catch (error) {
+      console.error('Failed to load saved selectors:', error);
+    }
+  }
+
+  setupEventListeners() {
+    // Refresh button
+    document.getElementById('refresh-data').addEventListener('click', () => {
+      this.loadData().then(() => {
+        this.render();
+        this.showToast('Data refreshed', 'success');
+      });
+    });
+
+    // Clear button
+    document.getElementById('clear-data').addEventListener('click', () => {
+      if (confirm('Clear all scraped data?')) {
+        this.data = [];
+        this.filteredData = [];
+        this.columns = [];
+        this.currentPage = 1;
+        
+        chrome.storage.local.remove(['scrapedData', 'dataSource']);
+        this.render();
+        
+        this.showToast('Data cleared', 'success');
+      }
+    });
+
+    // Toggle tester button
+    document.getElementById('toggle-tester').addEventListener('click', () => {
+      const tester = document.getElementById('selector-tester');
+      tester.classList.toggle('hidden');
+      
+      if (!tester.classList.contains('hidden')) {
+        document.getElementById('selector-input').focus();
+      }
+    });
+
+    // Search filter
+    const searchInput = document.getElementById('search-filter');
+    let searchTimeout;
+    searchInput.addEventListener('input', (e) => {
+      clearTimeout(searchTimeout);
+      searchTimeout = setTimeout(() => {
+        this.applyFilter();
+      }, 300);
+    });
+
+    // Column filter
+    document.getElementById('apply-filter').addEventListener('click', () => {
+      this.applyFilter();
+    });
+
+    // Clear filter
+    document.getElementById('clear-filter').addEventListener('click', () => {
+      searchInput.value = '';
+      document.getElementById('column-filter').value = '';
+      this.applyFilter();
+    });
+
+    // Pagination
+    document.getElementById('prev-page').addEventListener('click', () => {
+      if (this.currentPage > 1) {
+        this.currentPage--;
+        this.renderTable();
+        this.updatePagination();
+      }
+    });
+
+    document.getElementById('next-page').addEventListener('click', () => {
+      const totalPages = Math.ceil(this.filteredData.length / this.pageSize);
+      if (this.currentPage < totalPages) {
+        this.currentPage++;
+        this.renderTable();
+        this.updatePagination();
+      }
+    });
+
+    // Transform actions
+    document.querySelectorAll('[data-action]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        this.handleTransform(e.target.dataset.action);
+      });
+    });
+
+    // Export buttons
+    document.querySelectorAll('[data-format]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        this.exportData(e.target.dataset.format);
+      });
+    });
+
+    // Initialize selector tester
+    this.initSelectorTester();
+    
+    // Listen for new data
+    chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+      if (request.action === 'newDataScraped') {
+        this.loadData().then(() => {
+          this.render();
+          this.showToast('New data loaded', 'success');
+        });
+      } else if (request.action === 'elementPicked') {
+        this.handleElementPicked(request);
+      }
+      
+      sendResponse({ received: true });
+      return true;
+    });
+  }
+
+  initSelectorTester() {
+    const tester = new SelectorTester(this);
+    tester.init();
+  }
+
+  render() {
+    this.updateInfo();
+    this.renderColumnFilter();
+    this.renderTable();
+    this.updatePagination();
+    this.updateJSONPreview();
+  }
+
+  updateInfo() {
+    document.getElementById('total-rows').textContent = this.filteredData.length;
+    document.getElementById('total-columns').textContent = this.columns.length;
+  }
+
+  renderColumnFilter() {
+    const select = document.getElementById('column-filter');
+    const currentValue = select.value;
+    
+    select.innerHTML = '<option value="">All Columns</option>';
+    
+    this.columns.forEach(column => {
+      const option = document.createElement('option');
+      option.value = column;
+      option.textContent = column;
+      select.appendChild(option);
+    });
+    
+    // Restore previous selection
+    if (this.columns.includes(currentValue)) {
+      select.value = currentValue;
+    }
+  }
+
+  renderTable() {
+    const table = document.getElementById('data-table');
+    const thead = table.querySelector('thead tr');
+    const tbody = table.querySelector('tbody');
+    
+    // Clear existing content
+    thead.innerHTML = '';
+    tbody.innerHTML = '';
+    
+    if (this.filteredData.length === 0) {
+      const emptyRow = document.createElement('tr');
+      const emptyCell = document.createElement('td');
+      emptyCell.colSpan = Math.max(1, this.columns.length);
+      emptyCell.textContent = 'No data available';
+      emptyCell.style.textAlign = 'center';
+      emptyCell.style.padding = '40px';
+      emptyCell.style.color = '#999';
+      emptyRow.appendChild(emptyCell);
+      tbody.appendChild(emptyRow);
+      return;
+    }
+    
+    // Create header
+    this.columns.forEach(column => {
+      const th = document.createElement('th');
+      th.textContent = column;
+      th.title = `Click to sort by "${column}"`;
+      th.addEventListener('click', () => this.sortByColumn(column));
+      
+      // Add sort indicator
+      const sortIndicator = document.createElement('span');
+      sortIndicator.textContent = ' ↕';
+      sortIndicator.style.opacity = '0.5';
+      th.appendChild(sortIndicator);
+      
+      thead.appendChild(th);
+    });
+    
+    // Get data for current page
+    const startIndex = (this.currentPage - 1) * this.pageSize;
+    const endIndex = Math.min(startIndex + this.pageSize, this.filteredData.length);
+    const pageData = this.filteredData.slice(startIndex, endIndex);
+    
+    // Create rows
+    pageData.forEach((row, rowIndex) => {
+      const tr = document.createElement('tr');
+      tr.dataset.rowIndex = startIndex + rowIndex;
+      
+      this.columns.forEach(column => {
+        const td = document.createElement('td');
+        let value = row[column];
+        
+        // Format the value
+        if (value === null || value === undefined) {
+          value = '';
+        } else if (typeof value === 'object') {
+          try {
+            value = JSON.stringify(value);
+          } catch (e) {
+            value = String(value);
+          }
+        } else {
+          value = String(value);
+        }
+        
+        // Truncate if too long
+        if (value.length > 100) {
+          td.textContent = value.substring(0, 100) + '...';
+          td.title = value;
+        } else {
+          td.textContent = value;
+        }
+        
+        // Add data attribute for filtering
+        td.dataset.column = column;
+        td.dataset.value = value;
+        
+        tr.appendChild(td);
+      });
+      
+      tbody.appendChild(tr);
+    });
+  }
+
+  updatePagination() {
+    const totalPages = Math.max(1, Math.ceil(this.filteredData.length / this.pageSize));
+    const prevBtn = document.getElementById('prev-page');
+    const nextBtn = document.getElementById('next-page');
+    const pageInfo = document.getElementById('page-info');
+    
+    prevBtn.disabled = this.currentPage === 1;
+    nextBtn.disabled = this.currentPage === totalPages || totalPages === 0;
+    
+    pageInfo.textContent = `Page ${this.currentPage} of ${totalPages}`;
+  }
+
+  updateJSONPreview() {
+    const preview = document.getElementById('json-preview');
+    
+    if (this.filteredData.length === 0) {
+      preview.textContent = '{}';
+      return;
+    }
+    
+    const sample = this.filteredData.slice(0, 3);
+    
+    try {
+      const formatted = JSON.stringify(sample, null, 2);
+      
+      // Syntax highlighting for JSON
+      const highlighted = formatted
+        .replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?)/g, (match) => {
+          let cls = 'number';
+          if (/^"/.test(match)) {
+            if (/:$/.test(match)) {
+              cls = 'key';
+            } else {
+              cls = 'string';
+            }
+          } else if (/true|false/.test(match)) {
+            cls = 'boolean';
+          } else if (/null/.test(match)) {
+            cls = 'null';
+          }
+          return `<span class="json-${cls}">${match}</span>`;
+        })
+        .replace(/\n/g, '<br>')
+        .replace(/ /g, '&nbsp;');
+      
+      preview.innerHTML = highlighted;
+      
+      // Add CSS for syntax highlighting
+      if (!document.querySelector('#json-highlight-css')) {
+        const style = document.createElement('style');
+        style.id = 'json-highlight-css';
+        style.textContent = `
+          .json-key { color: #667eea; }
+          .json-string { color: #48bb78; }
+          .json-number { color: #f6ad55; }
+          .json-boolean { color: #ed64a6; }
+          .json-null { color: #a0aec0; }
+        `;
+        document.head.appendChild(style);
+      }
+    } catch (error) {
+      preview.textContent = 'Error formatting JSON';
+    }
+  }
+
+  applyFilter() {
+    const searchTerm = document.getElementById('search-filter').value.toLowerCase();
+    const column = document.getElementById('column-filter').value;
+    
+    if (!searchTerm && !column) {
+      this.filteredData = [...this.data];
+    } else {
+      this.filteredData = this.data.filter(row => {
+        // If column specified, only search in that column
+        if (column) {
+          const value = String(row[column] || '').toLowerCase();
+          return value.includes(searchTerm);
+        }
+        
+        // Otherwise search in all columns
+        return Object.values(row).some(value => {
+          if (value === null || value === undefined) return false;
+          return String(value).toLowerCase().includes(searchTerm);
+        });
+      });
+    }
+    
+    this.currentPage = 1;
+    this.render();
+  }
+
+  sortByColumn(column) {
+    if (!this.columns.includes(column)) return;
+    
+    // Check current sort direction
+    const isAscending = !this.filteredData[0] || 
+                       this.filteredData[0][column] <= this.filteredData[1][column];
+    
+    this.filteredData.sort((a, b) => {
+      const valA = a[column];
+      const valB = b[column];
+      
+      // Handle different data types
+      if (typeof valA === 'string' && typeof valB === 'string') {
+        return isAscending ? 
+          valA.localeCompare(valB) : 
+          valB.localeCompare(valA);
+      }
+      
+      if (typeof valA === 'number' && typeof valB === 'number') {
+        return isAscending ? valA - valB : valB - valA;
+      }
+      
+      // Fallback to string comparison
+      const strA = String(valA || '');
+      const strB = String(valB || '');
+      return isAscending ? 
+        strA.localeCompare(strB) : 
+        strB.localeCompare(strA);
+    });
+    
+    this.renderTable();
+    this.showToast(`Sorted by "${column}" ${isAscending ? 'descending' : 'ascending'}`, 'info');
+  }
+
+  handleTransform(action) {
+    switch (action) {
+      case 'deduplicate':
+        this.removeDuplicates();
+        break;
+      case 'sort-asc':
+        this.sortAscending();
+        break;
+      case 'sort-desc':
+        this.sortDescending();
+        break;
+      case 'clean':
+        this.cleanWhitespace();
+        break;
+      case 'rename':
+        this.renameColumns();
+        break;
+      case 'hide':
+        this.hideColumns();
+        break;
+      case 'delete':
+        this.deleteColumns();
+        break;
+    }
+    
+    this.saveData();
+    this.render();
+  }
+
+  removeDuplicates() {
+    const seen = new Set();
+    const uniqueData = [];
+    
+    for (const item of this.data) {
+      const key = JSON.stringify(item);
+      if (!seen.has(key)) {
+        seen.add(key);
+        uniqueData.push(item);
+      }
+    }
+    
+    const removed = this.data.length - uniqueData.length;
+    this.data = uniqueData;
+    this.filteredData = [...this.data];
+    
+    if (removed > 0) {
+      this.showToast(`Removed ${removed} duplicate rows`, 'success');
+    } else {
+      this.showToast('No duplicates found', 'info');
+    }
+  }
+
+  sortAscending() {
+    if (this.columns.length > 0) {
+      const column = this.columns[0];
+      this.data.sort((a, b) => {
+        const valA = String(a[column] || '');
+        const valB = String(b[column] || '');
+        return valA.localeCompare(valB);
+      });
+      this.filteredData = [...this.data];
+      this.showToast(`Sorted A-Z by "${column}"`, 'success');
+    }
+  }
+
+  sortDescending() {
+    if (this.columns.length > 0) {
+      const column = this.columns[0];
+      this.data.sort((a, b) => {
+        const valA = String(a[column] || '');
+        const valB = String(b[column] || '');
+        return valB.localeCompare(valA);
+      });
+      this.filteredData = [...this.data];
+      this.showToast(`Sorted Z-A by "${column}"`, 'success');
+    }
+  }
+
+  cleanWhitespace() {
+    let cleanedCount = 0;
+    
+    this.data = this.data.map(row => {
+      const cleaned = {};
+      
+      Object.entries(row).forEach(([key, value]) => {
+        if (typeof value === 'string') {
+          const cleanedValue = value.trim().replace(/\s+/g, ' ');
+          if (cleanedValue !== value) cleanedCount++;
+          cleaned[key] = cleanedValue;
+        } else {
+          cleaned[key] = value;
+        }
+      });
+      
+      return cleaned;
+    });
+    
+    this.filteredData = [...this.data];
+    
+    if (cleanedCount > 0) {
+      this.showToast(`Cleaned whitespace in ${cleanedCount} values`, 'success');
+    } else {
+      this.showToast('No whitespace to clean', 'info');
+    }
+  }
+
+  async renameColumns() {
+    const column = prompt('Enter column name to rename:');
+    if (!column || !this.columns.includes(column)) {
+      this.showToast('Invalid column name', 'error');
+      return;
+    }
+    
+    const newName = prompt(`Enter new name for "${column}":`, column);
+    if (!newName || newName === column) {
+      return;
+    }
+    
+    // Check if new name already exists
+    if (this.columns.includes(newName)) {
+      this.showToast(`Column "${newName}" already exists`, 'error');
+      return;
+    }
+    
+    // Rename column in all rows
+    this.data = this.data.map(row => {
+      const newRow = { ...row };
+      newRow[newName] = newRow[column];
+      delete newRow[column];
+      return newRow;
+    });
+    
+    this.filteredData = this.filteredData.map(row => {
+      const newRow = { ...row };
+      newRow[newName] = newRow[column];
+      delete newRow[column];
+      return newRow;
+    });
+    
+    // Update columns array
+    const index = this.columns.indexOf(column);
+    this.columns[index] = newName;
+    
+    this.showToast(`Renamed "${column}" to "${newName}"`, 'success');
+  }
+
+  hideColumns() {
+    const column = prompt('Enter column name to hide:');
+    if (!column || !this.columns.includes(column)) {
+      this.showToast('Invalid column name', 'error');
+      return;
+    }
+    
+    const index = this.columns.indexOf(column);
+    this.columns.splice(index, 1);
+    this.showToast(`Hidden column "${column}"`, 'success');
+  }
+
+  deleteColumns() {
+    const column = prompt('Enter column name to delete:');
+    if (!column || !this.columns.includes(column)) {
+      this.showToast('Invalid column name', 'error');
+      return;
+    }
+    
+    if (!confirm(`Permanently delete column "${column}" and all its data?`)) {
+      return;
+    }
+    
+    // Delete column from all rows
+    this.data = this.data.map(row => {
+      const newRow = { ...row };
+      delete newRow[column];
+      return newRow;
+    });
+    
+    this.filteredData = this.filteredData.map(row => {
+      const newRow = { ...row };
+      delete newRow[column];
+      return newRow;
+    });
+    
+    // Remove from columns array
+    const index = this.columns.indexOf(column);
+    this.columns.splice(index, 1);
+    
+    this.showToast(`Deleted column "${column}"`, 'success');
+  }
+
+  async exportData(format) {
+    try {
+      const dataToExport = this.filteredData.length > 0 ? this.filteredData : this.data;
+      
+      if (dataToExport.length === 0) {
+        this.showToast('No data to export', 'error');
+        return;
+      }
+      
+      const response = await chrome.runtime.sendMessage({
+        action: 'exportData',
+        data: dataToExport,
+        format: format
+      });
+      
+      if (response.success) {
+        this.showToast(`Exported as ${format.toUpperCase()}`, 'success');
+      } else {
+        throw new Error(response.error);
+      }
+    } catch (error) {
+      console.error('Export failed:', error);
+      this.showToast(`Export failed: ${error.message}`, 'error');
+    }
+  }
+
+  saveData() {
+    chrome.storage.local.set({
+      scrapedData: this.data,
+      dataSource: window.location.href,
+      lastScrapeTime: Date.now()
+    });
+  }
+
+  updateScrapeTime(timestamp) {
+    const timeAgo = this.getTimeAgo(timestamp);
+    const sourceElement = document.getElementById('data-source');
+    if (sourceElement.textContent !== '-') {
+      sourceElement.textContent += ` (${timeAgo})`;
+    }
+  }
+
+  getTimeAgo(timestamp) {
+    const seconds = Math.floor((Date.now() - timestamp) / 1000);
+    
+    const intervals = [
+      { label: 'year', seconds: 31536000 },
+      { label: 'month', seconds: 2592000 },
+      { label: 'day', seconds: 86400 },
+      { label: 'hour', seconds: 3600 },
+      { label: 'minute', seconds: 60 },
+      { label: 'second', seconds: 1 }
+    ];
+    
+    for (const interval of intervals) {
+      const count = Math.floor(seconds / interval.seconds);
+      if (count >= 1) {
+        return `${count} ${interval.label}${count !== 1 ? 's' : ''} ago`;
+      }
+    }
+    
+    return 'just now';
+  }
+
+  showToast(message, type = 'info') {
+    // Remove existing toast
+    const existingToast = document.querySelector('.hyper-toast');
+    if (existingToast) {
+      existingToast.remove();
+    }
+    
+    // Create toast
+    const toast = document.createElement('div');
+    toast.className = `hyper-toast hyper-toast-${type}`;
+    toast.textContent = message;
+    
+    // Style toast
+    toast.style.cssText = `
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      background: ${type === 'error' ? '#f56565' : type === 'success' ? '#48bb78' : '#4299e1'};
+      color: white;
+      padding: 12px 20px;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 500;
+      z-index: 10000;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      animation: toastSlideIn 0.3s ease-out;
+    `;
+    
+    // Add animation style
+    if (!document.querySelector('#toast-animations')) {
+      const style = document.createElement('style');
+      style.id = 'toast-animations';
+      style.textContent = `
+        @keyframes toastSlideIn {
+          from { transform: translateX(100%); opacity: 0; }
+          to { transform: translateX(0); opacity: 1; }
+        }
+        @keyframes toastSlideOut {
+          from { transform: translateX(0); opacity: 1; }
+          to { transform: translateX(100%); opacity: 0; }
+        }
+      `;
+      document.head.appendChild(style);
+    }
+    
+    document.body.appendChild(toast);
+    
+    // Auto-remove after 3 seconds
+    setTimeout(() => {
+      toast.style.animation = 'toastSlideOut 0.3s ease-out';
+      setTimeout(() => {
+        if (toast.parentNode) {
+          toast.parentNode.removeChild(toast);
+        }
+      }, 300);
+    }, 3000);
+  }
+
+  handleElementPicked(request) {
+    const selectorInput = document.getElementById('selector-input');
+    if (selectorInput) {
+      selectorInput.value = request.selector;
+      document.getElementById('selector-tester').classList.remove('hidden');
+      
+      // Trigger test
+      setTimeout(() => {
+        const testBtn = document.getElementById('test-selector');
+        if (testBtn) testBtn.click();
+      }, 100);
+    }
+  }
+
+  renderSavedSelectors() {
+    const container = document.getElementById('selector-list');
+    
+    if (this.savedSelectors.length === 0) {
+      container.innerHTML = '<div class="empty-state">No saved selectors</div>';
+      return;
+    }
+    
+    container.innerHTML = '';
+    
+    this.savedSelectors.forEach((saved, index) => {
+      const div = document.createElement('div');
+      div.className = 'saved-selector';
+      
+      div.innerHTML = `
+        <div class="selector-info">
+          <div class="selector-name">${saved.name}</div>
+          <div class="selector-value" title="${saved.selector}">${saved.selector}</div>
+        </div>
+        <div class="selector-actions-small">
+          <button class="use-selector" title="Use this selector" data-index="${index}">▶</button>
+          <button class="delete-selector" title="Delete this selector" data-index="${index}">✕</button>
+        </div>
+      `;
+      
+      container.appendChild(div);
+    });
+    
+    // Add event listeners for saved selector buttons
+    container.querySelectorAll('.use-selector').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const index = parseInt(e.target.dataset.index);
+        this.useSavedSelector(index);
+      });
+    });
+    
+    container.querySelectorAll('.delete-selector').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const index = parseInt(e.target.dataset.index);
+        this.deleteSavedSelector(index);
+      });
+    });
+  }
+
+  useSavedSelector(index) {
+    if (this.savedSelectors[index]) {
+      const saved = this.savedSelectors[index];
+      document.getElementById('selector-input').value = saved.selector;
+      
+      // Trigger test
+      setTimeout(() => {
+        document.getElementById('test-selector').click();
+      }, 100);
+      
+      this.showToast(`Loaded selector: ${saved.name}`, 'success');
+    }
+  }
+
+  async deleteSavedSelector(index) {
+    if (confirm('Delete this saved selector?')) {
+      this.savedSelectors.splice(index, 1);
+      
+      await chrome.storage.local.set({ savedSelectors: this.savedSelectors });
+      this.renderSavedSelectors();
+      
+      this.showToast('Selector deleted', 'success');
+    }
+  }
+
+  async saveNewSelector(name, selector, matches) {
+    const savedSelector = {
+      name,
+      selector,
+      url: window.location.href,
+      timestamp: new Date().toISOString(),
+      matches: matches.length
+    };
+    
+    this.savedSelectors.push(savedSelector);
+    
+    await chrome.storage.local.set({ savedSelectors: this.savedSelectors });
+    this.renderSavedSelectors();
+  }
+}
+
+class SelectorTester {
+  constructor(dataViewer) {
+    this.dataViewer = dataViewer;
+    this.currentMatches = [];
+    this.selectedMatch = null;
+  }
+
+  init() {
+    this.setupEventListeners();
+  }
+
+  setupEventListeners() {
+    // Test selector button
+    document.getElementById('test-selector').addEventListener('click', () => {
+      this.testSelector();
+    });
+
+    // Enter key in selector input
+    document.getElementById('selector-input').addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') {
+        this.testSelector();
+      }
+    });
+
+    // Pick element button
+    document.getElementById('pick-element').addEventListener('click', () => {
+      this.startElementPicker();
+    });
+
+    // Use selector button
+    document.getElementById('use-selector').addEventListener('click', () => {
+      this.useCurrentSelector();
+    });
+
+    // Save selector button
+    document.getElementById('save-selector').addEventListener('click', () => {
+      this.saveSelector();
+    });
+  }
+
+  async testSelector() {
+    const selector = document.getElementById('selector-input').value.trim();
+    
+    if (!selector) {
+      this.showError('Please enter a selector');
+      return;
+    }
+    
+    try {
+      // Test the selector in the current page
+      const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+      const response = await chrome.tabs.sendMessage(tabs[0].id, {
+        action: 'testSelector',
+        selector
+      });
+      
+      if (response.success) {
+        this.showResults(response.matches, selector);
+      } else {
+        this.showError(response.error || 'Invalid selector');
+      }
+    } catch (error) {
+      console.error('Selector test failed:', error);
+      this.showError('Could not test selector. Make sure you\'re on a valid webpage.');
+    }
+  }
+
+  showResults(matches, selector) {
+    this.currentMatches = matches;
+    this.selectedMatch = null;
+    
+    // Update stats
+    document.getElementById('match-count').textContent = matches.length;
+    document.getElementById('preview-count').textContent = Math.min(10, matches.length);
+    
+    // Show preview
+    const preview = document.getElementById('matches-preview');
+    preview.innerHTML = '';
+    
+    if (matches.length === 0) {
+      preview.innerHTML = '<div class="empty-state">No elements found with this selector</div>';
+      return;
+    }
+    
+    matches.slice(0, 10).forEach((match, index) => {
+      const div = document.createElement('div');
+      div.className = 'match-item';
+      div.innerHTML = `
+        <span class="match-index">${index + 1}</span>
+        <span class="match-text" title="${match.text}">${this.truncateText(match.text, 60)}</span>
+      `;
+      
+      div.addEventListener('click', () => {
+        this.selectMatch(index);
+      });
+      
+      preview.appendChild(div);
+    });
+    
+    if (matches.length > 10) {
+      const more = document.createElement('div');
+      more.className = 'match-item';
+      more.style.color = '#666';
+      more.style.fontStyle = 'italic';
+      more.style.justifyContent = 'center';
+      more.textContent = `... and ${matches.length - 10} more matches`;
+      preview.appendChild(more);
+    }
+  }
+
+  selectMatch(index) {
+    // Highlight selected match in UI
+    const items = document.querySelectorAll('.match-item');
+    items.forEach(item => item.classList.remove('selected'));
+    
+    if (index < items.length) {
+      items[index].classList.add('selected');
+      this.selectedMatch = this.currentMatches[index];
+      
+      // Highlight element on page
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        const selector = document.getElementById('selector-input').value;
+        chrome.tabs.sendMessage(tabs[0].id, {
+          action: 'highlightElement',
+          selector: selector,
+          index: index
+        });
+      });
+    }
+  }
+
+  async startElementPicker() {
+    try {
+      const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+      await chrome.tabs.sendMessage(tabs[0].id, {
+        action: 'startElementPicker'
+      });
+      
+      this.dataViewer.showToast('Click on any element to select it', 'info');
+    } catch (error) {
+      this.dataViewer.showToast('Failed to start element picker', 'error');
+    }
+  }
+
+  async useCurrentSelector() {
+    const selector = document.getElementById('selector-input').value;
+    
+    if (!selector) {
+      this.dataViewer.showToast('No selector to use', 'error');
+      return;
+    }
+    
+    if (this.currentMatches.length === 0) {
+      this.dataViewer.showToast('Selector matches 0 elements', 'warning');
+      return;
+    }
+    
+    try {
+      const response = await chrome.runtime.sendMessage({
+        action: 'scrapeWithSelector',
+        selector: selector,
+        mode: 'custom'
+      });
+      
+      if (response && response.success) {
+        this.dataViewer.showToast(`Scraped ${response.stats.rows} items`, 'success');
+        
+        // Refresh data viewer
+        setTimeout(() => {
+          this.dataViewer.loadData().then(() => {
+            this.dataViewer.render();
+          });
+        }, 500);
+      } else {
+        this.dataViewer.showToast('Failed to scrape with selector', 'error');
+      }
+    } catch (error) {
+      this.dataViewer.showToast('Failed to use selector', 'error');
+    }
+  }
+
+  async saveSelector() {
+    const selector = document.getElementById('selector-input').value;
+    
+    if (!selector || this.currentMatches.length === 0) {
+      this.dataViewer.showToast('Cannot save empty or invalid selector', 'error');
+      return;
+    }
+    
+    const name = prompt('Enter a name for this selector:', 
+      `Selector ${this.currentMatches.length} matches`);
+    
+    if (name && selector) {
+      await this.dataViewer.saveNewSelector(name, selector, this.currentMatches);
+      this.dataViewer.showToast('Selector saved!', 'success');
+    }
+  }
+
+  showError(message) {
+    const preview = document.getElementById('matches-preview');
+    preview.innerHTML = `<div class="empty-state" style="color: #f56565;">${message}</div>`;
+    
+    document.getElementById('match-count').textContent = '0';
+    document.getElementById('preview-count').textContent = '0';
+    this.currentMatches = [];
+    this.selectedMatch = null;
+  }
+
+  truncateText(text, maxLength) {
+    if (!text || text.length <= maxLength) return text || '';
+    return text.substring(0, maxLength - 3) + '...';
+  }
+}
+
+// Initialize data viewer when DOM is ready
+document.addEventListener('DOMContentLoaded', () => {
+  new DataViewer();
+});
+
+// Listen for messages from the popup
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (request.action === 'updateData') {
+    const viewer = window.dataViewerInstance;
+    if (viewer) {
+      viewer.loadData().then(() => {
+        viewer.render();
+        viewer.showToast('Data updated from popup', 'success');
+      });
+    }
+  }
+  sendResponse({ received: true });
+  return true;
+});
+
+// Export for debugging
+window.dataViewerInstance = null;
