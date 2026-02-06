@@ -1,0 +1,345 @@
+class PopupController {
+  constructor() {
+    this.currentTab = null;
+    this.currentData = null;
+    this.init();
+  }
+  
+  async init() {
+    await this.getCurrentTab();
+    this.setupEventListeners();
+    this.updateStatus();
+  }
+  
+  async getCurrentTab() {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    this.currentTab = tab;
+  }
+  
+  setupEventListeners() {
+    // Mode switching
+    document.querySelectorAll('.mode-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => this.switchMode(e.target.dataset.mode));
+    });
+    
+    // Preset buttons
+    document.querySelectorAll('.preset').forEach(btn => {
+      btn.addEventListener('click', (e) => this.handlePreset(e.target.dataset.preset));
+    });
+    
+    // Scrape button
+    document.getElementById('scrape-now').addEventListener('click', () => this.quickScrape());
+    
+    // Batch scraping
+    document.getElementById('start-batch').addEventListener('click', () => this.startBatch());
+    
+    // Export buttons
+    document.querySelectorAll('.export-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => this.exportData(e.target.dataset.format));
+    });
+    
+    // Delay slider
+    const delaySlider = document.getElementById('delay');
+    const delayValue = document.getElementById('delay-value');
+    delaySlider.addEventListener('input', (e) => {
+      const value = parseInt(e.target.value);
+      delayValue.textContent = value === 0 ? 'No delay' : `${value}ms`;
+    });
+    
+    // Navigation
+    document.getElementById('open-sidebar').addEventListener('click', () => this.openSidebar());
+    document.getElementById('open-options').addEventListener('click', () => this.openOptions());
+    
+    // Auto-detect checkbox
+    document.getElementById('auto-detect').addEventListener('change', (e) => {
+      this.updateSpeedEstimate();
+    });
+  }
+  
+  switchMode(mode) {
+    // Update active button
+    document.querySelectorAll('.mode-btn').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.mode === mode);
+    });
+    
+    // Show correct content
+    document.querySelectorAll('.mode-content').forEach(content => {
+      content.classList.toggle('hidden', content.id !== `${mode}-mode`);
+    });
+  }
+  
+  updateSpeedEstimate() {
+    const autoDetect = document.getElementById('auto-detect').checked;
+    const speedValue = document.getElementById('speed-value');
+    
+    // Estimate based on settings
+    const baseTime = autoDetect ? 50 : 30;
+    const includeImages = document.getElementById('include-images').checked;
+    const finalTime = includeImages ? baseTime + 20 : baseTime;
+    
+    speedValue.textContent = `~${finalTime}ms`;
+  }
+  
+  async quickScrape() {
+    this.setStatus('Scraping...', 'processing');
+    
+    const autoDetect = document.getElementById('auto-detect').checked;
+    const includeImages = document.getElementById('include-images').checked;
+    
+    const config = {
+      mode: autoDetect ? 'auto' : 'products',
+      includeImages,
+      timestamp: Date.now()
+    };
+    
+    try {
+      const response = await chrome.runtime.sendMessage({
+        action: 'quickScrape',
+        config
+      });
+      
+      if (response.success) {
+        this.currentData = response.data;
+        this.showResults(response);
+        this.setStatus(`Done in ${response.stats.time}ms`, 'success');
+      } else {
+        throw new Error(response.error);
+      }
+    } catch (error) {
+      this.setStatus(`Error: ${error.message}`, 'error');
+    }
+  }
+  
+  async handlePreset(preset) {
+    const configs = {
+      tables: { mode: 'table', selectors: ['table'] },
+      products: { mode: 'products', selectors: ['.product', '[class*="item"]'] },
+      lists: { mode: 'list', selectors: ['ul', 'ol', 'dl'] },
+      contacts: { mode: 'custom', selectors: ['[href^="mailto:"]', '[href^="tel:"]'] }
+    };
+    
+    this.setStatus(`Scraping ${preset}...`, 'processing');
+    
+    try {
+      const response = await chrome.runtime.sendMessage({
+        action: 'quickScrape',
+        config: configs[preset]
+      });
+      
+      if (response.success) {
+        this.currentData = response.data;
+        this.showResults(response);
+        this.setStatus(`Found ${response.stats.rows} items`, 'success');
+      }
+    } catch (error) {
+      this.setStatus('Scraping failed', 'error');
+    }
+  }
+  
+  showResults(response) {
+    const preview = document.getElementById('results-preview');
+    preview.classList.remove('hidden');
+    
+    // Update stats
+    document.getElementById('row-count').textContent = 
+      `${response.stats.rows} rows`;
+    document.getElementById('extraction-time').textContent = 
+      `${response.stats.time.toFixed(1)}ms`;
+    
+    // Show preview table
+    this.renderPreviewTable(response.data);
+    
+    // Scroll to results
+    preview.scrollIntoView({ behavior: 'smooth' });
+  }
+  
+  renderPreviewTable(data) {
+    const table = document.getElementById('preview-table');
+    table.innerHTML = '';
+    
+    if (!data || data.length === 0) {
+      table.innerHTML = '<tr><td>No data found</td></tr>';
+      return;
+    }
+    
+    // Create headers from first item's keys
+    const firstItem = data[0];
+    const headers = Object.keys(firstItem);
+    
+    // Create header row
+    const headerRow = document.createElement('tr');
+    headers.forEach(header => {
+      const th = document.createElement('th');
+      th.textContent = header;
+      headerRow.appendChild(th);
+    });
+    table.appendChild(headerRow);
+    
+    // Create data rows (limit to 10)
+    const rowsToShow = data.slice(0, 10);
+    rowsToShow.forEach(item => {
+      const row = document.createElement('tr');
+      headers.forEach(header => {
+        const td = document.createElement('td');
+        let content = item[header];
+        
+        // Truncate long content
+        if (typeof content === 'string' && content.length > 30) {
+          content = content.substring(0, 30) + '...';
+        }
+        
+        td.textContent = content || '';
+        row.appendChild(td);
+      });
+      table.appendChild(row);
+    });
+  }
+  
+  async startBatch() {
+    const urlsText = document.getElementById('batch-urls').value;
+    const urls = urlsText.split('\n')
+      .map(url => url.trim())
+      .filter(url => url.startsWith('http'));
+    
+    if (urls.length === 0) {
+      this.setStatus('Please enter valid URLs', 'error');
+      return;
+    }
+    
+    this.setStatus(`Starting batch: ${urls.length} URLs`, 'processing');
+    
+    const depth = document.getElementById('depth').value;
+    const delay = parseInt(document.getElementById('delay').value);
+    
+    const config = {
+      urls,
+      depth,
+      delay,
+      mode: 'products'
+    };
+    
+    try {
+      const response = await chrome.runtime.sendMessage({
+        action: 'batchScrape',
+        config
+      });
+      
+      // Show progress
+      const progressContainer = document.querySelector('.batch-progress');
+      progressContainer.classList.remove('hidden');
+      
+      // Start polling progress
+      this.pollBatchProgress(response.jobId);
+      
+    } catch (error) {
+      this.setStatus('Batch failed to start', 'error');
+    }
+  }
+  
+  async pollBatchProgress(jobId) {
+    const progressFill = document.getElementById('progress-fill');
+    const progressText = document.getElementById('progress-text');
+    
+    const interval = setInterval(async () => {
+      const response = await chrome.runtime.sendMessage({
+        action: 'getJobStatus',
+        jobId
+      });
+      
+      if (response.completed) {
+        clearInterval(interval);
+        
+        const percent = 100;
+        progressFill.style.width = `${percent}%`;
+        progressText.textContent = `${response.processed}/${response.total}`;
+        
+        if (response.results) {
+          this.currentData = response.results;
+          this.showResults({
+            data: response.results,
+            stats: {
+              rows: response.results.length,
+              time: response.totalTime
+            }
+          });
+        }
+        
+        this.setStatus(`Batch completed in ${response.totalTime}ms`, 'success');
+      } else {
+        const percent = (response.processed / response.total) * 100;
+        progressFill.style.width = `${percent}%`;
+        progressText.textContent = `${response.processed}/${response.total}`;
+      }
+    }, 500);
+  }
+  
+  async exportData(format) {
+    if (!this.currentData) {
+      this.setStatus('No data to export', 'error');
+      return;
+    }
+    
+    this.setStatus(`Exporting as ${format.toUpperCase()}...`, 'processing');
+    
+    try {
+      await chrome.runtime.sendMessage({
+        action: 'exportData',
+        data: this.currentData,
+        format
+      });
+      
+      this.setStatus(`Exported as ${format.toUpperCase()}`, 'success');
+    } catch (error) {
+      this.setStatus('Export failed', 'error');
+    }
+  }
+  
+  openSidebar() {
+    chrome.sidePanel.open({ windowId: chrome.windows.WINDOW_ID_CURRENT });
+  }
+  
+  openOptions() {
+    chrome.runtime.openOptionsPage();
+  }
+  
+  setStatus(message, type = 'info') {
+    const statusElement = document.getElementById('status');
+    statusElement.textContent = message;
+    
+    // Reset classes
+    statusElement.className = 'status';
+    
+    // Add type class
+    if (type !== 'info') {
+      statusElement.classList.add(type);
+    }
+    
+    // Auto-clear success messages
+    if (type === 'success') {
+      setTimeout(() => {
+        if (statusElement.textContent === message) {
+          this.setStatus('Ready');
+        }
+      }, 3000);
+    }
+  }
+  
+  updateStatus() {
+    chrome.tabs.sendMessage(
+      this.currentTab.id,
+      { action: 'getStatus' },
+      (response) => {
+        if (chrome.runtime.lastError) {
+          this.setStatus('Page not ready', 'warning');
+        } else {
+          this.setStatus('Ready to scrape');
+        }
+      }
+    );
+  }
+}
+
+// Initialize popup
+document.addEventListener('DOMContentLoaded', () => {
+  new PopupController();
+});
