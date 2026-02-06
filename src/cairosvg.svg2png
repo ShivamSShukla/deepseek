@@ -1,0 +1,11 @@
+import cairosvg
+
+sizes = [(16, 'icon16'), (48, 'icon48'), (128, 'icon128')]
+
+for size, name in sizes:
+    cairosvg.svg2png(
+        url=f'{name}.svg',
+        write_to=f'{name}.png',
+        output_width=size,
+        output_height=size
+    )
