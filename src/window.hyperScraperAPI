@@ -1,0 +1,11 @@
+## 🔌 API Reference (For Developers)
+
+### Content Script API
+```javascript
+// Access the scraper API from any script
+window.hyperScraperAPI.scrape({
+  mode: 'auto', // 'table', 'list', 'products', 'custom'
+  selectors: ['.product-item'], // Required for custom mode
+  includeImages: true,
+  maxRows: 1000
+});
