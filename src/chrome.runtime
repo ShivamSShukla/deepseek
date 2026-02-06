@@ -1,0 +1,6 @@
+// Programmatic export
+chrome.runtime.sendMessage({
+  action: 'exportData',
+  data: yourData,
+  format: 'csv'
+});
