@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Data Viewer - HyperScraper Pro</title>
+  <link rel="stylesheet" href="sidebar.css">
+</head>
+<body>
+  <div class="container">
+    <!-- Header -->
+    <header class="header">
+      <h2>📊 HyperScraper Pro</h2>
+      <div class="controls">
+        <button id="refresh-data" title="Refresh data">🔄</button>
+        <button id="clear-data" title="Clear all data">🗑️</button>
+        <button id="toggle-tester" title="Toggle selector tester">🔍</button>
+      </div>
+    </header>
+    
+    <!-- Data Info -->
+    <div class="data-info">
+      <div class="info-item">
+        <span class="label">Rows:</span>
+        <span id="total-rows">0</span>
+      </div>
+      <div class="info-item">
+        <span class="label">Columns:</span>
+        <span id="total-columns">0</span>
+      </div>
+      <div class="info-item">
+        <span class="label">Source:</span>
+        <span id="data-source" class="url">-</span>
+      </div>
+    </div>
+    
+    <!-- Filter Bar -->
+    <div class="filter-bar">
+      <input type="text" id="search-filter" placeholder="Search in data...">
+      <select id="column-filter">
+        <option value="">All Columns</option>
+      </select>
+      <button id="apply-filter" class="filter-btn">Filter</button>
+      <button id="clear-filter" class="filter-btn">Clear</button>
+    </div>
+    
+    <!-- Data Table Container -->
+    <div class="data-table-container">
+      <table id="data-table">
+        <thead>
+          <tr></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    
+    <!-- Pagination -->
+    <div class="pagination">
+      <button id="prev-page" disabled>← Previous</button>
+      <span id="page-info">Page 1 of 1</span>
+      <button id="next-page" disabled>Next →</button>
+    </div>
+    
+    <!-- Selector Tester (Hidden by default) -->
+    <div class="selector-tester hidden" id="selector-tester">
+      <h4>🔍 Selector Tester</h4>
+      
+      <div class="tester-controls">
+        <input type="text" id="selector-input" placeholder="Enter CSS selector (e.g., .product, table.items)">
+        <button id="test-selector" class="test-btn">Test</button>
+        <button id="pick-element" class="pick-btn">🎯 Pick</button>
+      </div>
+      
+      <div class="test-results">
+        <div class="result-stats">
+          <span>Matches: <strong id="match-count">0</strong></span>
+          <span>Preview: <strong id="preview-count">0</strong> shown</span>
+        </div>
+        
+        <div class="matches-preview" id="matches-preview">
+          <div class="empty-state">Enter a selector to test</div>
+        </div>
+        
+        <div class="selector-actions">
+          <button id="use-selector" class="action-btn primary">Use This Selector</button>
+          <button id="save-selector" class="action-btn secondary">💾 Save</button>
+        </div>
+      </div>
+      
+      <div class="saved-selectors" id="saved-selectors">
+        <h5>💾 Saved Selectors</h5>
+        <div class="selector-list" id="selector-list">
+          <div class="empty-state">No saved selectors</div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Data Actions -->
+    <div class="data-actions">
+      <div class="action-group">
+        <h4>🔄 Transform</h4>
+        <button data-action="deduplicate" class="action-btn">Remove Duplicates</button>
+        <button data-action="sort-asc" class="action-btn">Sort A→Z</button>
+        <button data-action="sort-desc" class="action-btn">Sort Z→A</button>
+        <button data-action="clean" class="action-btn">Clean Whitespace</button>
+      </div>
+      
+      <div class="action-group">
+        <h4>📊 Columns</h4>
+        <button data-action="rename" class="action-btn">Rename Columns</button>
+        <button data-action="hide" class="action-btn">Hide Columns</button>
+        <button data-action="delete" class="action-btn">Delete Columns</button>
+      </div>
+      
+      <div class="action-group">
+        <h4>💾 Export</h4>
+        <button data-format="csv" class="action-btn">CSV</button>
+        <button data-format="excel" class="action-btn">Excel</button>
+        <button data-format="json" class="action-btn">JSON</button>
+        <button data-format="clipboard" class="action-btn">📋 Copy</button>
+      </div>
+    </div>
+    
+    <!-- Data Preview -->
+    <div class="data-preview">
+      <h4>👁️ JSON Preview</h4>
+      <pre id="json-preview">{}</pre>
+    </div>
+  </div>
+  
+  <script src="sidebar.js"></script>
+</body>
+</html>
