@@ -1,0 +1,6 @@
+javascriptCopyDownload// External integration
+chrome.runtime.sendMessage({
+  action: 'scrape',
+  url: 'https://example.com',
+  config: { /* custom config */ }
+});
