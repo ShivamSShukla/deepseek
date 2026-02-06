@@ -1,0 +1,25 @@
+# 📦 Installation Guide
+
+## Prerequisites
+
+- **Google Chrome** version 88 or higher
+- **Basic understanding** of browser extensions
+- **Enable Developer Mode** in Chrome extensions page
+
+## 🚀 Quick Installation
+
+### Method 1: From Chrome Web Store (Coming Soon)
+1. Visit the [Chrome Web Store](https://chrome.google.com/webstore)
+2. Search for "HyperScraper Pro"
+3. Click "Add to Chrome"
+4. Confirm installation when prompted
+
+### Method 2: Manual Installation (Developer Mode)
+
+1. **Download the extension**
+   ```bash
+   # Option A: Download ZIP
+   # Go to GitHub releases and download the latest .zip file
+   
+   # Option B: Clone repository
+   git clone https://github.com/yourusername/hyper-scraper-pro.git
