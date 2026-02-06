@@ -1,0 +1,210 @@
+class DOMScanner {
+  // ... existing code ...
+  
+  detectStructures() {
+    const startTime = performance.now();
+    
+    // Run detectors in parallel
+    const detectors = {
+      tables: () => {
+        const detector = new TableDetector();
+        return detector.detect();
+      },
+      lists: () => {
+        const detector = new ListDetector();
+        return detector.detect();
+      },
+      products: () => {
+        const detector = new ProductDetector();
+        return detector.detect();
+      }
+    };
+    
+    const results = {};
+    const promises = [];
+    
+    Object.entries(detectors).forEach(([type, detector]) => {
+      promises.push(
+        new Promise(resolve => {
+          try {
+            const result = detector();
+            results[type] = result;
+          } catch (e) {
+            console.error(`${type} detector failed:`, e);
+            results[type] = { error: e.message };
+          }
+          resolve();
+        })
+      );
+    });
+    
+    // Wait for all detectors
+    return Promise.all(promises).then(() => {
+      const totalTime = performance.now() - startTime;
+      console.log(`All detectors completed in ${totalTime}ms`);
+      
+      return {
+        ...results,
+        metadata: {
+          detectionTime: totalTime,
+          url: window.location.href,
+          timestamp: new Date().toISOString()
+        }
+      };
+    });
+  }
+  
+  generateSelectors(element) {
+    // Get best selector for this specific element
+    const selectors = [];
+    
+    // Try different detector approaches
+    if (element.tagName.toLowerCase() === 'table') {
+      const detector = new TableDetector();
+      const detection = detector.detect([element]);
+      if (detection.selectors && detection.selectors.table_1) {
+        selectors.push(...detection.selectors.table_1.selectors);
+      }
+    }
+    
+    // Generate generic selectors
+    selectors.push(...this.generateGenericSelectors(element));
+    
+    // Rank and return top selectors
+    return this.rankSelectors(selectors, element);
+  }
+  
+  generateGenericSelectors(element) {
+    const selectors = [];
+    const tag = element.tagName.toLowerCase();
+    
+    // ID selector
+    if (element.id) {
+      selectors.push(`#${CSS.escape(element.id)}`);
+    }
+    
+    // Class selectors
+    if (element.className && typeof element.className === 'string') {
+      const classes = element.className.trim().split(/\s+/).filter(c => c);
+      
+      // Individual class selectors
+      classes.forEach(className => {
+        selectors.push(`.${CSS.escape(className)}`);
+      });
+      
+      // Combined class selectors
+      if (classes.length >= 2) {
+        for (let i = 0; i < classes.length; i++) {
+          for (let j = i + 1; j < classes.length; j++) {
+            selectors.push(`.${CSS.escape(classes[i])}.${CSS.escape(classes[j])}`);
+          }
+        }
+      }
+    }
+    
+    // Attribute selectors
+    const attributes = ['data-testid', 'data-id', 'data-selector', 'role', 'aria-label'];
+    attributes.forEach(attr => {
+      if (element.hasAttribute(attr)) {
+        const value = element.getAttribute(attr);
+        selectors.push(`${tag}[${attr}="${CSS.escape(value)}"]`);
+      }
+    });
+    
+    // Path selector
+    const pathSelector = this.generatePathSelector(element);
+    if (pathSelector) {
+      selectors.push(pathSelector);
+    }
+    
+    // nth-child selector
+    const parent = element.parentNode;
+    if (parent) {
+      const siblings = Array.from(parent.children)
+        .filter(child => child.tagName === element.tagName);
+      if (siblings.length > 1) {
+        const index = siblings.indexOf(element) + 1;
+        selectors.push(`${tag}:nth-child(${index})`);
+      }
+    }
+    
+    return selectors;
+  }
+  
+  rankSelectors(selectors, targetElement) {
+    return selectors
+      .map(selector => {
+        try {
+          const elements = document.querySelectorAll(selector);
+          const matches = elements.length;
+          const isExact = matches > 0 && elements[0] === targetElement;
+          
+          let score = 0;
+          
+          // Exact match is most important
+          if (isExact) score += 100;
+          
+          // Fewer matches is better
+          if (matches === 1) score += 50;
+          else score += Math.max(0, 20 - matches);
+          
+          // Shorter selectors are generally better
+          score += Math.max(0, 100 - selector.length);
+          
+          // ID selectors are very good
+          if (selector.startsWith('#')) score += 30;
+          
+          // Class selectors with 1-3 classes are good
+          if (selector.includes('.') && !selector.includes('#')) {
+            const classCount = (selector.match(/\./g) || []).length;
+            if (classCount >= 1 && classCount <= 3) score += 20;
+          }
+          
+          // Attribute selectors are decent
+          if (selector.includes('[') && selector.includes(']')) score += 10;
+          
+          // nth-child selectors are fragile
+          if (selector.includes(':nth-child')) score -= 10;
+          
+          return {
+            selector,
+            score,
+            matches,
+            isExact,
+            length: selector.length,
+            specificity: this.calculateSpecificity(selector)
+          };
+        } catch (e) {
+          return {
+            selector,
+            score: -1000,
+            error: e.message
+          };
+        }
+      })
+      .filter(s => s.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 10);
+  }
+  
+  calculateSpecificity(selector) {
+    // Simple specificity calculator
+    let a = 0, b = 0, c = 0;
+    
+    // IDs
+    const ids = selector.match(/#[a-zA-Z_][\w\-]*/g);
+    if (ids) a = ids.length;
+    
+    // Classes and attributes
+    const classes = selector.match(/\.[a-zA-Z_][\w\-]*/g);
+    const attrs = selector.match(/\[[^\]]+\]/g);
+    if (classes) b += classes.length;
+    if (attrs) b += attrs.length;
+    
+    // Elements
+    const elements = selector.match(/^[a-zA-Z_][\w\-]*|(?<=[\s>\+~])[a-zA-Z_][\w\-]*/g);
+    if (elements) c = elements.length;
+    
+    return (a * 100) + (b * 10) + c;
+  }
+}
