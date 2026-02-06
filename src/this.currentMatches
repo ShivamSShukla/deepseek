@@ -1,0 +1,201 @@
+class SelectorTester {
+  constructor() {
+    this.currentMatches = [];
+    this.selectedMatch = null;
+    this.init();
+  }
+  
+  init() {
+    this.setupEventListeners();
+  }
+  
+  setupEventListeners() {
+    document.getElementById('test-selector').addEventListener('click', () => {
+      this.testSelector();
+    });
+    
+    document.getElementById('selector-input').addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') {
+        this.testSelector();
+      }
+    });
+    
+    document.getElementById('pick-element').addEventListener('click', () => {
+      this.startElementPicker();
+    });
+    
+    document.getElementById('use-selector').addEventListener('click', () => {
+      this.useCurrentSelector();
+    });
+    
+    document.getElementById('save-selector').addEventListener('click', () => {
+      this.saveSelector();
+    });
+  }
+  
+  testSelector() {
+    const selector = document.getElementById('selector-input').value.trim();
+    
+    if (!selector) {
+      this.showError('Please enter a selector');
+      return;
+    }
+    
+    try {
+      // Test the selector in the current page
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        chrome.tabs.sendMessage(tabs[0].id, {
+          action: 'testSelector',
+          selector
+        }, (response) => {
+          if (chrome.runtime.lastError) {
+            this.showError('Could not test selector');
+            return;
+          }
+          
+          if (response.success) {
+            this.showResults(response.matches, selector);
+          } else {
+            this.showError(response.error);
+          }
+        });
+      });
+    } catch (e) {
+      this.showError('Invalid selector');
+    }
+  }
+  
+  showResults(matches, selector) {
+    this.currentMatches = matches;
+    
+    // Update stats
+    document.getElementById('match-count').textContent = matches.length;
+    document.getElementById('preview-count').textContent = Math.min(10, matches.length);
+    
+    // Show preview
+    const preview = document.getElementById('matches-preview');
+    preview.innerHTML = '';
+    
+    matches.slice(0, 10).forEach((match, index) => {
+      const div = document.createElement('div');
+      div.className = 'match-item';
+      div.textContent = this.truncateText(match.text, 50);
+      div.title = match.text;
+      
+      div.addEventListener('click', () => {
+        this.selectMatch(index);
+      });
+      
+      preview.appendChild(div);
+    });
+    
+    if (matches.length > 10) {
+      const more = document.createElement('div');
+      more.className = 'match-item';
+      more.textContent = `... and ${matches.length - 10} more`;
+      more.style.color = '#666';
+      more.style.fontStyle = 'italic';
+      preview.appendChild(more);
+    }
+  }
+  
+  selectMatch(index) {
+    // Highlight selected match
+    const items = document.querySelectorAll('.match-item');
+    items.forEach(item => item.classList.remove('selected'));
+    
+    if (index < items.length) {
+      items[index].classList.add('selected');
+      this.selectedMatch = this.currentMatches[index];
+      
+      // Scroll element into view in page
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        chrome.tabs.sendMessage(tabs[0].id, {
+          action: 'highlightElement',
+          selector: document.getElementById('selector-input').value,
+          index
+        });
+      });
+    }
+  }
+  
+  startElementPicker() {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      chrome.tabs.sendMessage(tabs[0].id, {
+        action: 'startElementPicker'
+      }, (response) => {
+        if (response && response.selector) {
+          document.getElementById('selector-input').value = response.selector;
+          this.testSelector();
+        }
+      });
+    });
+  }
+  
+  useCurrentSelector() {
+    const selector = document.getElementById('selector-input').value;
+    
+    if (!selector) {
+      this.showError('No selector to use');
+      return;
+    }
+    
+    // Send selector to popup for scraping
+    chrome.runtime.sendMessage({
+      action: 'scrapeWithSelector',
+      selector,
+      mode: 'custom'
+    }, (response) => {
+      if (response && response.success) {
+        this.showSuccess('Selector applied successfully');
+      } else {
+        this.showError('Failed to apply selector');
+      }
+    });
+  }
+  
+  saveSelector() {
+    const selector = document.getElementById('selector-input').value;
+    const name = prompt('Enter a name for this selector:', 'My Selector');
+    
+    if (name && selector) {
+      chrome.storage.local.get(['savedSelectors'], (result) => {
+        const savedSelectors = result.savedSelectors || [];
+        savedSelectors.push({
+          name,
+          selector,
+          url: window.location.href,
+          timestamp: new Date().toISOString(),
+          matches: this.currentMatches.length
+        });
+        
+        chrome.storage.local.set({ savedSelectors }, () => {
+          this.showSuccess('Selector saved!');
+        });
+      });
+    }
+  }
+  
+  truncateText(text, maxLength) {
+    if (text.length <= maxLength) return text;
+    return text.substring(0, maxLength - 3) + '...';
+  }
+  
+  showError(message) {
+    const preview = document.getElementById('matches-preview');
+    preview.innerHTML = `<div class="error" style="color: #e53e3e; padding: 8px;">${message}</div>`;
+    
+    document.getElementById('match-count').textContent = '0';
+    document.getElementById('preview-count').textContent = '0';
+  }
+  
+  showSuccess(message) {
+    const preview = document.getElementById('matches-preview');
+    preview.innerHTML = `<div class="success" style="color: #48bb78; padding: 8px;">${message}</div>`;
+  }
+}
+
+// Initialize selector tester
+document.addEventListener('DOMContentLoaded', () => {
+  new SelectorTester();
+});
