@@ -1,0 +1,2 @@
+cd hyper-scraper-pro
+zip -r hyper-scraper-pro.zip . -x ".*" -x "node_modules/*"
