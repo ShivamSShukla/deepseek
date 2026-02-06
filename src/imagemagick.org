@@ -1,0 +1,9 @@
+# Install ImageMagick
+# macOS: brew install imagemagick
+# Ubuntu: sudo apt-get install imagemagick
+# Windows: Download from imagemagick.org
+
+# Convert SVG to PNG
+convert -background none -resize 16x16 icon16.svg icon16.png
+convert -background none -resize 48x48 icon48.svg icon48.png
+convert -background none -resize 128x128 icon128.svg icon128.png
