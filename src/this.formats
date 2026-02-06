@@ -1,0 +1,172 @@
+class DataExporter {
+  constructor() {
+    this.formats = {
+      csv: this.exportCSV,
+      excel: this.exportExcel,
+      json: this.exportJSON,
+      xml: this.exportXML,
+      sql: this.exportSQL,
+      clipboard: this.exportClipboard
+    };
+  }
+  
+  async export(data, format) {
+    if (!this.formats[format]) {
+      throw new Error(`Unsupported format: ${format}`);
+    }
+    
+    return await this.formats[format].call(this, data);
+  }
+  
+  exportCSV(data) {
+    if (!data || data.length === 0) {
+      throw new Error('No data to export');
+    }
+    
+    const headers = Object.keys(data[0]);
+    const csvRows = [];
+    
+    // Add headers
+    csvRows.push(headers.join(','));
+    
+    // Add data rows
+    data.forEach(row => {
+      const values = headers.map(header => {
+        let value = row[header];
+        
+        // Escape commas and quotes
+        if (typeof value === 'string') {
+          if (value.includes(',') || value.includes('"') || value.includes('\n')) {
+            value = `"${value.replace(/"/g, '""')}"`;
+          }
+        } else if (value === null || value === undefined) {
+          value = '';
+        }
+        
+        return value;
+      });
+      
+      csvRows.push(values.join(','));
+    });
+    
+    const csvContent = csvRows.join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    
+    return this.downloadFile(blob, 'data.csv');
+  }
+  
+  exportExcel(data) {
+    // Create simple Excel file (CSV with .xls extension)
+    return this.exportCSV(data).then(() => {
+      // In a real implementation, use a library like SheetJS
+      console.log('Excel export would use SheetJS library');
+    });
+  }
+  
+  exportJSON(data) {
+    const jsonContent = JSON.stringify(data, null, 2);
+    const blob = new Blob([jsonContent], { type: 'application/json' });
+    
+    return this.downloadFile(blob, 'data.json');
+  }
+  
+  exportClipboard(data) {
+    if (data.length === 0) {
+      throw new Error('No data to copy');
+    }
+    
+    const headers = Object.keys(data[0]);
+    const csvRows = [];
+    
+    // Create TSV for clipboard (better for spreadsheets)
+    csvRows.push(headers.join('\t'));
+    
+    data.forEach(row => {
+      const values = headers.map(header => row[header] || '');
+      csvRows.push(values.join('\t'));
+    });
+    
+    const text = csvRows.join('\n');
+    
+    return navigator.clipboard.writeText(text).then(() => {
+      console.log('Copied to clipboard');
+      return true;
+    });
+  }
+  
+  exportSQL(data, tableName = 'scraped_data') {
+    if (!data || data.length === 0) {
+      throw new Error('No data to export');
+    }
+    
+    const headers = Object.keys(data[0]);
+    const columns = headers.map(h => `\`${h}\``).join(', ');
+    
+    const inserts = data.map(row => {
+      const values = headers.map(header => {
+        const value = row[header];
+        if (value === null || value === undefined) {
+          return 'NULL';
+        } else if (typeof value === 'number') {
+          return value;
+        } else {
+          return `'${String(value).replace(/'/g, "''")}'`;
+        }
+      }).join(', ');
+      
+      return `INSERT INTO \`${tableName}\` (${columns}) VALUES (${values});`;
+    }).join('\n');
+    
+    const sqlContent = `CREATE TABLE IF NOT EXISTS \`${tableName}\` (
+  ${headers.map(h => `\`${h}\` TEXT`).join(',\n  ')}
+);\n\n${inserts}`;
+    
+    const blob = new Blob([sqlContent], { type: 'text/sql' });
+    return this.downloadFile(blob, 'data.sql');
+  }
+  
+  exportXML(data) {
+    const xmlContent = `<?xml version="1.0" encoding="UTF-8"?>
+<data>
+${data.map(row => `  <item>
+${Object.entries(row).map(([key, value]) => `    <${key}>${this.escapeXML(String(value))}</${key}>`).join('\n')}
+  </item>`).join('\n')}
+</data>`;
+    
+    const blob = new Blob([xmlContent], { type: 'application/xml' });
+    return this.downloadFile(blob, 'data.xml');
+  }
+  
+  escapeXML(str) {
+    return str.replace(/[<>&'"]/g, char => {
+      switch (char) {
+        case '<': return '&lt;';
+        case '>': return '&gt;';
+        case '&': return '&amp;';
+        case '\'': return '&apos;';
+        case '"': return '&quot;';
+        default: return char;
+      }
+    });
+  }
+  
+  downloadFile(blob, filename) {
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      
+      a.href = url;
+      a.download = filename;
+      a.style.display = 'none';
+      
+      document.body.appendChild(a);
+      a.click();
+      
+      setTimeout(() => {
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        resolve();
+      }, 100);
+    });
+  }
+}
